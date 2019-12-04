@@ -76,7 +76,11 @@ class _Model(HACModel):
             segment=data_to_segment(data[track_i])
             if not segment:
                 continue
-            starting_point[segment, track] = track
+            if 'labels' in data.dtype.names:
+                label=data[track_i]['labels'][0]
+                starting_point[segment, label] = label
+            else:
+                starting_point[segment, track] = track
 
         return starting_point, data
 
