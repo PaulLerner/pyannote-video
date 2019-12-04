@@ -35,6 +35,7 @@ The standard pipeline is the following
 Usage:
   pyannote-face track [options] <video> <shot.json> <tracking>
   pyannote-face extract [options] <video> <tracking> <landmark_model> <embedding_model> <output>
+  pyannote-face identify [options] <references> <precomputed> <output>
   pyannote-face demo [options] <video> <precomputed> <output>
   pyannote-face (-h | --help)
   pyannote-face --version
@@ -72,6 +73,18 @@ Feature extraction options (features):
   <embedding_model>         Path to dlib feature extraction model.
   <output>                  Path to features result file.
 
+Identification options (identify):
+
+  <references>              Path to the references (only json file as described in pyannote.db.plumcot is supported for now)
+  <precomputed>             Path to the precomputed features file.
+  <output>                  Path to the computed features.
+
+  --data_path=<data_path>   Path to the data (paths in the json files are relative to pyannote.db.plumcot)
+  --credits=<credits>       Path to the credits of a serie, used to filter out references (defined in pyannote.db.plumcot)
+  --characters=<characters> Path to the characters of a serie, necessary to load credits (defined in pyannote.db.plumcot)
+  --file_uri=<file_uri>     Uri of the file (i.e. episode name), necessary to load credits (defined in pyannote.db.plumcot)
+  --labels=<labels>         Path to the references labels (useless if you use json file, not implemented, defaults to np.arange())
+
 Visualization options (demo):
 
   <video>                   Path to video file.
@@ -92,12 +105,18 @@ from docopt import docopt
 
 from pyannote.core import Annotation
 import pyannote.core.json
+import json
+import warnings
+import os
 
 from pyannote.video import __version__
 from pyannote.video import Video
 from pyannote.video import Face
 from pyannote.video import FaceTracking
 from pyannote.video.utils.scale_frame import bbox_to_rectangle, rectangle_to_bbox, parts_to_landmarks,scale_up_landmarks
+
+#TODO : from pyannote.db.plumcot.scripts.episodes import read_credits
+from pyannote.pipeline.blocks.classification import ClosestAssignment
 
 import numpy as np
 import cv2
@@ -119,6 +138,32 @@ TRACK_DTYPE=[
     BBOX_DTYPE,
     ('status', '<U21'),
 ]
+REFERENCE_I=0#which character reference to use in identification mode
+
+def read_credits(path,separator=","):
+    """loads credits in a dict with one key per episode"""
+    #TODO: import this from pyannote.db.plumcot
+    credits=np.loadtxt(path,delimiter=separator,dtype=str)
+    credits={episode[0]:np.array(episode[1:],dtype=int) for episode in credits}
+    return credits
+def read_characters(CHARACTERS_PATH,SEPARATOR=","):
+    with open(CHARACTERS_PATH,'r') as file:
+        raw=file.read()
+    characters=[line.split(SEPARATOR) for line in raw.split("\n") if line !='']
+    characters=np.array(characters,dtype=str)
+    return characters
+def get_references_from_json(json_path,data_path="",credits=None):
+    with open(json_path,"r") as file:
+        image_jsons=json.load(file)
+    references={}
+    for name, character in image_jsons['characters'].items():
+        if "references" in character:
+            if credits is not None:
+                if name in credits:
+                    references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
+    reference_labels=list(references.keys())
+    reference_values=references.values()
+    return reference_values,reference_labels
 
 def getGenerator(precomputed):
     """Parse precomputed face file and generate timestamped faces
@@ -302,7 +347,44 @@ def get_make_frame(video, precomputed,yield_landmarks=False,
 
     return make_frame
 
+def identify(references, precomputed, output,
+    data_path="", credits=False, characters=False, file_uri=False, labels=False):
+    if credits and characters and file_uri:
+        credits=read_credits(credits)
+        characters=read_characters(characters)
+        credits=characters[:,0][credits[file_uri].nonzero()]
+    if references.endswith("json"):
+        reference_values,reference_labels=get_references_from_json(references,data_path,credits)
+        if labels:
+            warnings.warn(f"passing labels when using json file for reference is ineffective")
+    else:
+        raise NotImplementedError()
+    if reference_labels is None:
+        reference_labels=np.arange(len(reference_values))
+    features=np.load(precomputed)
+    labels=np.zeros(features.shape,dtype='<U21')
+    classifier=ClosestAssignment('euclidean',normalize=False)
+    classifier.instantiate({"threshold":float("inf")})
 
+    for track in np.unique(features["track"]):
+        track_i=np.where(features["track"]==track)[0]
+        embeddings=features["embeddings"][track_i]
+        targets=classifier(reference_values,embeddings,'mean')
+        labels[track_i]=reference_labels[targets]
+
+    features=np.array(
+        list(zip(
+            features['time'],
+            features['track'],
+            features['bbox'],
+            features['status'],
+            features['landmarks'],
+            features['embeddings'],
+            labels
+        )),
+        dtype=TRACK_DTYPE+[LANDMARKS_DTYPE,EMBEDDING_DTYPE,('labels','<U21')]
+    )
+    np.save(output,features)
 def demo(filename, precomputed, output, t_start=0., t_end=None, shift=0.,
          yield_landmarks=False, height=200, ffmpeg=None):
 
@@ -327,57 +409,69 @@ if __name__ == '__main__':
     version = 'pyannote-face {version}'.format(version=__version__)
     arguments = docopt(__doc__, version=version)
 
-    # initialize video
-    filename = arguments['<video>']
-    ffmpeg = arguments['--ffmpeg']
-
-    verbose = arguments['--verbose']
-
-    video = Video(filename, ffmpeg=ffmpeg, verbose=verbose)
-
-    # face tracking
-    if arguments['track']:
-
-        shot = arguments['<shot.json>']
-        tracking = arguments['<tracking>']
-        detect_min_size = float(arguments['--min-size'])
-        detect_every = float(arguments['--every'])
-        track_min_overlap_ratio = float(arguments['--min-overlap'])
-        track_min_confidence = float(arguments['--min-confidence'])
-        track_max_gap = float(arguments['--max-gap'])
-        track(video, shot, tracking,
-              detect_min_size=detect_min_size,
-              detect_every=detect_every,
-              track_min_overlap_ratio=track_min_overlap_ratio,
-              track_min_confidence=track_min_confidence,
-              track_max_gap=track_max_gap)
-
-    # facial features detection
-    if arguments['extract']:
-
-        tracking = arguments['<tracking>']
-        landmark_model = arguments['<landmark_model>']
-        embedding_model = arguments['<embedding_model>']
-        output = arguments['<output>']
-        extract(video, landmark_model, embedding_model, tracking, output)
-
-
-    if arguments['demo']:
-
+    if arguments['identify']:
+        references = arguments['<references>']
         precomputed = arguments['<precomputed>']
         output = arguments['<output>']
+        data_path=arguments['--data_path']
+        credits=arguments['--credits']
+        characters=arguments['--characters']
+        file_uri=arguments['--file_uri']
+        labels=arguments['--labels']
+        identify(references, precomputed, output, data_path,
+        credits, characters, file_uri, labels)
+    else:
+        # initialize video
+        filename = arguments['<video>']
+        ffmpeg = arguments['--ffmpeg']
 
-        t_start = float(arguments['--from'])
-        t_end = arguments['--until']
-        t_end = float(t_end) if t_end else None
+        verbose = arguments['--verbose']
 
-        shift = float(arguments['--shift'])
+        video = Video(filename, ffmpeg=ffmpeg, verbose=verbose)
 
-        yield_landmarks = arguments['--yield_landmarks']
+        # face tracking
+        if arguments['track']:
 
-        height = int(arguments['--height'])
+            shot = arguments['<shot.json>']
+            tracking = arguments['<tracking>']
+            detect_min_size = float(arguments['--min-size'])
+            detect_every = float(arguments['--every'])
+            track_min_overlap_ratio = float(arguments['--min-overlap'])
+            track_min_confidence = float(arguments['--min-confidence'])
+            track_max_gap = float(arguments['--max-gap'])
+            track(video, shot, tracking,
+                  detect_min_size=detect_min_size,
+                  detect_every=detect_every,
+                  track_min_overlap_ratio=track_min_overlap_ratio,
+                  track_min_confidence=track_min_confidence,
+                  track_max_gap=track_max_gap)
 
-        demo(filename, precomputed, output,
-             t_start=t_start, t_end=t_end,
-             yield_landmarks=yield_landmarks, height=height,
-             shift=shift, ffmpeg=ffmpeg)
+        # facial features detection
+        if arguments['extract']:
+
+            tracking = arguments['<tracking>']
+            landmark_model = arguments['<landmark_model>']
+            embedding_model = arguments['<embedding_model>']
+            output = arguments['<output>']
+            extract(video, landmark_model, embedding_model, tracking, output)
+
+
+        if arguments['demo']:
+
+            precomputed = arguments['<precomputed>']
+            output = arguments['<output>']
+
+            t_start = float(arguments['--from'])
+            t_end = arguments['--until']
+            t_end = float(t_end) if t_end else None
+
+            shift = float(arguments['--shift'])
+
+            yield_landmarks = arguments['--yield_landmarks']
+
+            height = int(arguments['--height'])
+
+            demo(filename, precomputed, output,
+                 t_start=t_start, t_end=t_end,
+                 yield_landmarks=yield_landmarks, height=height,
+                 shift=shift, ffmpeg=ffmpeg)
