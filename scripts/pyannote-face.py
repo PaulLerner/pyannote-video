@@ -161,6 +161,8 @@ def get_references_from_json(json_path,data_path="",credits=None):
             if credits is not None:
                 if name in credits:
                     references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
+            else:
+                references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
     reference_labels=list(references.keys())
     reference_values=references.values()
     return reference_values,reference_labels
