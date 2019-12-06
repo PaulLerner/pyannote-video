@@ -65,7 +65,7 @@ Face tracking options (track):
   --max-gap=<float>         Bridge gaps with duration shorter than <float>
                             [default: 1.].
 
-Feature extraction options (features):
+Feature extraction options (extract):
 
   <video>                   Path to video file.
   <tracking>                Path to tracking result file.
