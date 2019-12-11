@@ -116,7 +116,7 @@ from pyannote.video import FaceTracking
 from pyannote.video.utils.scale_frame import bbox_to_rectangle, rectangle_to_bbox, parts_to_landmarks,scale_up_landmarks
 
 #TODO : from pyannote.db.plumcot.scripts.episodes import read_credits
-from pyannote.pipeline.blocks.classification import ClosestAssignment
+from pyannote.pipeline.blocks.classification import PlumcotClosestAssignment
 
 import numpy as np
 import cv2
