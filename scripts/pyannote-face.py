@@ -364,15 +364,16 @@ def identify(references, precomputed, output,
     if reference_labels is None:
         reference_labels=np.arange(len(reference_values))
     features=np.load(precomputed)
-    labels=np.zeros(features.shape,dtype='<U21')
+    labels,distances=np.zeros(features.shape,dtype='<U21'),np.zeros(features.shape,dtype='float64')
     classifier=PlumcotClosestAssignment('euclidean',normalize=False)
     classifier.instantiate({"threshold":float("inf")})
 
     for track in np.unique(features["track"]):
         track_i=np.where(features["track"]==track)[0]
         embeddings=features["embeddings"][track_i]
-        targets=classifier(reference_values,embeddings,'mean')
-        labels[track_i]=reference_labels[targets]
+        target,distance=classifier(reference_values,embeddings,'mean')
+        labels[track_i]=reference_labels[target]
+        distances[track_i]=distance
 
     features=np.array(
         list(zip(
@@ -382,9 +383,15 @@ def identify(references, precomputed, output,
             features['status'],
             features['landmarks'],
             features['embeddings'],
-            labels
+            labels,
+            distances
         )),
-        dtype=TRACK_DTYPE+[LANDMARKS_DTYPE,EMBEDDING_DTYPE,('labels','<U21')]
+        dtype=TRACK_DTYPE+[
+            LANDMARKS_DTYPE,
+            EMBEDDING_DTYPE,
+            ('labels','<U21'),
+            ('distances','float64')
+        ]
     )
     np.save(output,features)
 def demo(filename, precomputed, output, t_start=0., t_end=None, shift=0.,
