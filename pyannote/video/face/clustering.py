@@ -58,12 +58,16 @@ class _Model(HACModel):
         return Segment(np.min(group.time), np.max(group.time))
 
 
-    def preprocess(self, embedding):
+    def preprocess(self, embedding, distance_threshold = float('inf')):
         """
         Parameters
         ----------
         embedding : str
             Path to face embeddings
+        distance_threshold: float, optional
+            Minimal distance between reference and target
+            to add the label in the starting point.
+            Defaults to add every label in data (i.e. +inf)
         """
 
         # TODO : option to only keep 'detections'
@@ -76,11 +80,10 @@ class _Model(HACModel):
             segment=data_to_segment(data[track_i])
             if not segment:
                 continue
-            if 'labels' in data.dtype.names:
-                label=data[track_i]['labels'][0]
-                starting_point[segment, label] = label
-            else:
-                starting_point[segment, track] = track
+            label=data[track_i]['labels'][0] if 'labels' in data.dtype.names else track
+            distance=data[track_i]['distances'][0] if 'distances' in data.dtype.names else 0
+            if distance<=distance_threshold:
+                starting_point[segment, track] =label
 
         return starting_point, data
 
