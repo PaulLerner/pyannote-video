@@ -365,7 +365,7 @@ def identify(references, precomputed, output,
         reference_labels=np.arange(len(reference_values))
     features=np.load(precomputed)
     labels=np.zeros(features.shape,dtype='<U21')
-    classifier=ClosestAssignment('euclidean',normalize=False)
+    classifier=PlumcotClosestAssignment('euclidean',normalize=False)
     classifier.instantiate({"threshold":float("inf")})
 
     for track in np.unique(features["track"]):
