@@ -104,7 +104,10 @@ Visualization options (demo):
   --until=<sec>             Encode demo until <sec> seconds.
   --shift=<sec>             Shift result files by <sec> seconds [default: 0].
   --yield_landmarks         Show landmarks in output video.
-
+  --d_thresh=<d_thresh>     Labels with a distance to the reference
+                            greater than `d_thresh` are surrounded
+                            with '?' if 'labels' and 'distances' are available
+                            in `precomputed`
 """
 
 from __future__ import division
@@ -291,7 +294,7 @@ def extract(video, landmark_model, embedding_model, tracking, output):
     np.save(output,extracted)
 
 def get_make_frame(video, precomputed,yield_landmarks=False,
-                   height=200, shift=0.0):
+                   height=200, shift=0.0, distance_threshold=float('inf')):
 
     COLORS = [
         (240, 163, 255), (  0, 117, 220), (153,  63,   0), ( 76,   0,  92),
@@ -342,6 +345,9 @@ def get_make_frame(video, precomputed,yield_landmarks=False,
                 label=''
             else:
                 label=face['labels']
+                if 'distances' in face.dtype.names:
+                    if face['distances'] > distance_threshold:
+                        label=f'?{label}?'
             cv2.putText(frame,
                         '{label:s}'.format(label=label),
                         (pt1[0], pt1[1] - 7), cv2.FONT_HERSHEY_SIMPLEX,
@@ -403,14 +409,14 @@ def identify(references, precomputed, output,
     )
     np.save(output,features)
 def demo(filename, precomputed, output, t_start=0., t_end=None, shift=0.,
-         yield_landmarks=False, height=200, ffmpeg=None):
+         yield_landmarks=False, height=200, ffmpeg=None,distance_threshold=float('inf')):
 
     video = Video(filename, ffmpeg=ffmpeg)
 
     from moviepy.editor import VideoClip, AudioFileClip
 
     make_frame = get_make_frame(video, precomputed, yield_landmarks=yield_landmarks,
-                                height=height, shift=shift)
+                                height=height, shift=shift,distance_threshold=distance_threshold)
     video_clip = VideoClip(make_frame, duration=video.duration)
     audio_clip = AudioFileClip(filename)
     clip = video_clip.set_audio(audio_clip)
@@ -487,8 +493,9 @@ if __name__ == '__main__':
             yield_landmarks = arguments['--yield_landmarks']
 
             height = int(arguments['--height'])
+            distance_threshold = float(arguments['--d_thresh']) if arguments['--d_thresh'] else float('inf')
 
             demo(filename, precomputed, output,
                  t_start=t_start, t_end=t_end,
                  yield_landmarks=yield_landmarks, height=height,
-                 shift=shift, ffmpeg=ffmpeg)
+                 shift=shift, ffmpeg=ffmpeg, distance_threshold=distance_threshold)
