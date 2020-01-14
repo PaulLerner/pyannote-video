@@ -75,15 +75,23 @@ Feature extraction options (extract):
 
 Identification options (identify):
 
-  <references>              Path to the references (only json file as described in pyannote.db.plumcot is supported for now)
+  <references>              Path to the references
+                            (only json file as described in pyannote.db.plumcot
+                            is supported for now)
   <precomputed>             Path to the precomputed features file.
   <output>                  Path to the computed features.
 
-  --data_path=<data_path>   Path to the data (paths in the json files are relative to pyannote.db.plumcot)
-  --credits=<credits>       Path to the credits of a serie, used to filter out references (defined in pyannote.db.plumcot)
-  --characters=<characters> Path to the characters of a serie, necessary to load credits (defined in pyannote.db.plumcot)
-  --file_uri=<file_uri>     Uri of the file (i.e. episode name), necessary to load credits (defined in pyannote.db.plumcot)
-  --labels=<labels>         Path to the references labels (useless if you use json file, not implemented, defaults to np.arange())
+  --data_path=<data_path>   Path to the data
+                            (paths in the json files are relative to pyannote.db.plumcot)
+  --credits=<credits>       Path to the credits of a serie, used to filter out references
+                            (defined in pyannote.db.plumcot)
+  --characters=<characters> Path to the characters of a serie, necessary to load credits
+                            (defined in pyannote.db.plumcot)
+  --file_uri=<file_uri>     Uri of the file (i.e. episode name), necessary to load credits
+                            (defined in pyannote.db.plumcot)
+  --labels=<labels>         Path to the references labels
+                            (useless if you use json file, not implemented,
+                            defaults to np.arange())
 
 Visualization options (demo):
 
