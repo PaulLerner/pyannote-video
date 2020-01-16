@@ -126,7 +126,8 @@ from pyannote.video import Face
 from pyannote.video import FaceTracking
 from pyannote.video.utils.scale_frame import bbox_to_rectangle, rectangle_to_bbox, parts_to_landmarks,scale_up_landmarks
 
-#TODO : from pyannote.db.plumcot.scripts.episodes import read_credits
+import pyannote.database
+from Plumcot import Plumcot
 from pyannote.pipeline.blocks.classification import PlumcotClosestAssignment
 
 import numpy as np
@@ -150,33 +151,6 @@ TRACK_DTYPE=[
     ('status', '<U21'),
 ]
 REFERENCE_I=0#which character reference to use in identification mode
-
-def read_credits(path,separator=","):
-    """loads credits in a dict with one key per episode"""
-    #TODO: import this from pyannote.db.plumcot
-    credits=np.loadtxt(path,delimiter=separator,dtype=str)
-    credits={episode[0]:np.array(episode[1:],dtype=int) for episode in credits}
-    return credits
-def read_characters(CHARACTERS_PATH,SEPARATOR=","):
-    with open(CHARACTERS_PATH,'r') as file:
-        raw=file.read()
-    characters=[line.split(SEPARATOR) for line in raw.split("\n") if line !='']
-    characters=np.array(characters,dtype=str)
-    return characters
-def get_references_from_json(json_path,data_path="",credits=None):
-    with open(json_path,"r") as file:
-        image_jsons=json.load(file)
-    references={}
-    for name, character in image_jsons['characters'].items():
-        if "references" in character:
-            if credits is not None:
-                if name in credits:
-                    references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
-            else:
-                references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
-    reference_labels=list(references.keys())
-    reference_values=references.values()
-    return reference_values,reference_labels
 
 def getGenerator(precomputed):
     """Parse precomputed face file and generate timestamped faces
@@ -365,12 +339,14 @@ def get_make_frame(video, precomputed,yield_landmarks=False,
 
 def identify(references, precomputed, output,
     data_path="", credits=False, characters=False, file_uri=False, labels=False):
+
+    db = Plumcot()
     if credits and characters and file_uri:
-        credits=read_credits(credits)
-        characters=read_characters(characters)
+        credits=db.read_credits(credits)
+        characters=db.read_characters(characters)
         credits=characters[:,0][credits[file_uri].nonzero()]
     if references.endswith("json"):
-        reference_values,reference_labels=get_references_from_json(references,data_path,credits)
+        reference_values,reference_labels=db.get_references_from_json(references,data_path,credits,REFERENCE_I)
         if labels:
             warnings.warn(f"passing labels when using json file for reference is ineffective")
     else:
