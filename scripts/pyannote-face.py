@@ -99,12 +99,14 @@ from pyannote.video import __version__
 from pyannote.video import Video
 from pyannote.video import Face
 from pyannote.video import FaceTracking
+from pyannote.video.utils import int_to_str_id,bbt_cast_list,bbt_cast_list_labels,buffy_cast_list,buffy_cast_list_labels,lost_cast_list,lost_cast_list_labels,got_cast_list,got_cast_list_labels
 
 from pandas import read_table
 
 from six.moves import zip
 import numpy as np
 import cv2
+import h5py
 
 import dlib
 
@@ -116,6 +118,9 @@ MAX_GAP = 1.
 FACE_TEMPLATE = ('{t:.3f} {identifier:d} '
                  '{left:.3f} {top:.3f} {right:.3f} {bottom:.3f} '
                  '{status:s}\n')
+
+
+
 
 
 def getFaceGenerator(tracking, frame_width, frame_height, double=True):
@@ -387,14 +392,17 @@ def get_make_frame(video, tracking, landmark=None, labels=None,
 def demo(filename, tracking, output, t_start=0., t_end=None, shift=0.,
          labels=None, landmark=None, height=200, ffmpeg=None):
 
+    training_method_type_ = 'w' #   'w' --> (Model trained with Weighted Sofmax: Cross entropy loss), wo --> (Model trained with Softmax: Cross entropy loss)
+
+
     # parse label file
     if labels is not None:
-        with open(labels, 'r') as f:
-            labels = {}
-            for line in f:
-                identifier, label = line.strip().split()
-                identifier = int(identifier)
-                labels[identifier] = label
+        data_ = h5py.File(labels)
+        final_predictions_ = np.asarray(data_['FINAL_PREDICTION'],dtype=int).squeeze(0)
+        track_id_ = np.asarray(data_['mlp_tracks'],dtype=int).squeeze(0)
+        labels = {}
+        for int_id,track in zip(final_predictions_,track_id_):
+            labels[track] = int_to_str_id(int_id)
 
     video = Video(filename, ffmpeg=ffmpeg)
 
