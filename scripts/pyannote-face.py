@@ -75,15 +75,23 @@ Feature extraction options (extract):
 
 Identification options (identify):
 
-  <references>              Path to the references (only json file as described in pyannote.db.plumcot is supported for now)
+  <references>              Path to the references
+                            (only json file as described in pyannote.db.plumcot
+                            is supported for now)
   <precomputed>             Path to the precomputed features file.
   <output>                  Path to the computed features.
 
-  --data_path=<data_path>   Path to the data (paths in the json files are relative to pyannote.db.plumcot)
-  --credits=<credits>       Path to the credits of a serie, used to filter out references (defined in pyannote.db.plumcot)
-  --characters=<characters> Path to the characters of a serie, necessary to load credits (defined in pyannote.db.plumcot)
-  --file_uri=<file_uri>     Uri of the file (i.e. episode name), necessary to load credits (defined in pyannote.db.plumcot)
-  --labels=<labels>         Path to the references labels (useless if you use json file, not implemented, defaults to np.arange())
+  --data_path=<data_path>   Path to the data
+                            (paths in the json files are relative to pyannote.db.plumcot)
+  --credits=<credits>       Path to the credits of a serie, used to filter out references
+                            (defined in pyannote.db.plumcot)
+  --characters=<characters> Path to the characters of a serie, necessary to load credits
+                            (defined in pyannote.db.plumcot)
+  --file_uri=<file_uri>     Uri of the file (i.e. episode name), necessary to load credits
+                            (defined in pyannote.db.plumcot)
+  --labels=<labels>         Path to the references labels
+                            (useless if you use json file, not implemented,
+                            defaults to np.arange())
 
 Visualization options (demo):
 
@@ -96,7 +104,10 @@ Visualization options (demo):
   --until=<sec>             Encode demo until <sec> seconds.
   --shift=<sec>             Shift result files by <sec> seconds [default: 0].
   --yield_landmarks         Show landmarks in output video.
-
+  --d_thresh=<d_thresh>     Labels with a distance to the reference
+                            greater than `d_thresh` are surrounded
+                            with '?' if 'labels' and 'distances' are available
+                            in `precomputed`
 """
 
 from __future__ import division
@@ -115,7 +126,8 @@ from pyannote.video import Face
 from pyannote.video import FaceTracking
 from pyannote.video.utils.scale_frame import bbox_to_rectangle, rectangle_to_bbox, parts_to_landmarks,scale_up_landmarks
 
-#TODO : from pyannote.db.plumcot.scripts.episodes import read_credits
+import pyannote.database
+from Plumcot import Plumcot
 from pyannote.pipeline.blocks.classification import PlumcotClosestAssignment
 
 import numpy as np
@@ -139,33 +151,6 @@ TRACK_DTYPE=[
     ('status', '<U21'),
 ]
 REFERENCE_I=0#which character reference to use in identification mode
-
-def read_credits(path,separator=","):
-    """loads credits in a dict with one key per episode"""
-    #TODO: import this from pyannote.db.plumcot
-    credits=np.loadtxt(path,delimiter=separator,dtype=str)
-    credits={episode[0]:np.array(episode[1:],dtype=int) for episode in credits}
-    return credits
-def read_characters(CHARACTERS_PATH,SEPARATOR=","):
-    with open(CHARACTERS_PATH,'r') as file:
-        raw=file.read()
-    characters=[line.split(SEPARATOR) for line in raw.split("\n") if line !='']
-    characters=np.array(characters,dtype=str)
-    return characters
-def get_references_from_json(json_path,data_path="",credits=None):
-    with open(json_path,"r") as file:
-        image_jsons=json.load(file)
-    references={}
-    for name, character in image_jsons['characters'].items():
-        if "references" in character:
-            if credits is not None:
-                if name in credits:
-                    references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
-            else:
-                references[name]=np.load(os.path.join(data_path,character["references"][REFERENCE_I]))
-    reference_labels=list(references.keys())
-    reference_values=references.values()
-    return reference_values,reference_labels
 
 def getGenerator(precomputed):
     """Parse precomputed face file and generate timestamped faces
@@ -283,7 +268,7 @@ def extract(video, landmark_model, embedding_model, tracking, output):
     np.save(output,extracted)
 
 def get_make_frame(video, precomputed,yield_landmarks=False,
-                   height=200, shift=0.0):
+                   height=200, shift=0.0, distance_threshold=float('inf')):
 
     COLORS = [
         (240, 163, 255), (  0, 117, 220), (153,  63,   0), ( 76,   0,  92),
@@ -334,6 +319,9 @@ def get_make_frame(video, precomputed,yield_landmarks=False,
                 label=''
             else:
                 label=face['labels']
+                if 'distances' in face.dtype.names:
+                    if face['distances'] > distance_threshold:
+                        label=f'?{label}?'
             cv2.putText(frame,
                         '{label:s}'.format(label=label),
                         (pt1[0], pt1[1] - 7), cv2.FONT_HERSHEY_SIMPLEX,
@@ -351,12 +339,14 @@ def get_make_frame(video, precomputed,yield_landmarks=False,
 
 def identify(references, precomputed, output,
     data_path="", credits=False, characters=False, file_uri=False, labels=False):
+
+    db = Plumcot()
     if credits and characters and file_uri:
-        credits=read_credits(credits)
-        characters=read_characters(characters)
+        credits=db.read_credits(credits)
+        characters=db.read_characters(characters)
         credits=characters[:,0][credits[file_uri].nonzero()]
     if references.endswith("json"):
-        reference_values,reference_labels=get_references_from_json(references,data_path,credits)
+        reference_values,reference_labels=db.get_references_from_json(references,data_path,credits,REFERENCE_I)
         if labels:
             warnings.warn(f"passing labels when using json file for reference is ineffective")
     else:
@@ -395,14 +385,14 @@ def identify(references, precomputed, output,
     )
     np.save(output,features)
 def demo(filename, precomputed, output, t_start=0., t_end=None, shift=0.,
-         yield_landmarks=False, height=200, ffmpeg=None):
+         yield_landmarks=False, height=200, ffmpeg=None,distance_threshold=float('inf')):
 
     video = Video(filename, ffmpeg=ffmpeg)
 
     from moviepy.editor import VideoClip, AudioFileClip
 
     make_frame = get_make_frame(video, precomputed, yield_landmarks=yield_landmarks,
-                                height=height, shift=shift)
+                                height=height, shift=shift,distance_threshold=distance_threshold)
     video_clip = VideoClip(make_frame, duration=video.duration)
     audio_clip = AudioFileClip(filename)
     clip = video_clip.set_audio(audio_clip)
@@ -479,8 +469,9 @@ if __name__ == '__main__':
             yield_landmarks = arguments['--yield_landmarks']
 
             height = int(arguments['--height'])
+            distance_threshold = float(arguments['--d_thresh']) if arguments['--d_thresh'] else float('inf')
 
             demo(filename, precomputed, output,
                  t_start=t_start, t_end=t_end,
                  yield_landmarks=yield_landmarks, height=height,
-                 shift=shift, ffmpeg=ffmpeg)
+                 shift=shift, ffmpeg=ffmpeg, distance_threshold=distance_threshold)
